@@ -1,0 +1,23 @@
+<a-scene>
+  <a-assets>
+    <img id="texture" src="texture.png">
+  </a-assets>
+
+  <a-box color="#FFF" width="4" height="10" depth="2"
+         position="-10 2 -5" rotation="0 0 45" scale="2 0.5 3"
+         src="#texture">
+    <!-- Animation will only play when the box is clicked. -->
+    <a-animation attribute="rotation" begin="click" repeat="indefinite" to="0 360 0"></a-animation>
+    <a-event name="mouseenter" scale="4 1 6"></a-event>
+  </a-box>
+
+  <!-- New lights. -->
+  <a-light type="spot" color="#333" position="-20 0 0" look-at="a-box"></a-light>
+  <a-light type="point" color="#AAA" position="0 5 0"></a-light>
+
+  <a-sky color="#73F7DD"></a-sky>
+
+  <a-camera position="0 1.8 0">
+    <a-cursor color="#2E3A87">
+  </a-camera>
+</a-scene>
