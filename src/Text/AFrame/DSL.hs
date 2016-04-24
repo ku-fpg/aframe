@@ -1,10 +1,11 @@
-{-# LANGUAGE GADTs #-}
+{-# LANGUAGE GADTs, OverloadedStrings #-}
 -- | Small monadic DSL for AFrame generation.
 module Text.AFrame.DSL where
  
 import Control.Monad
 import Data.Text(Text,unpack)
 import Text.AFrame
+
 
 scene :: DSL () -> AFrame
 scene m = case run prog 0 of
