@@ -1,6 +1,8 @@
 {-# LANGUAGE GADTs, OverloadedStrings #-}
 -- | Small monadic DSL for AFrame generation.
 module Text.AFrame.DSL where
+
+import Data.Generic.Diff -- for testing
  
 import Control.Monad
 import Data.Text(Text,unpack)
@@ -14,7 +16,7 @@ scene m = case run prog 0 of
              (_,  [_], _) -> error "scene internal error: top-level attribute"
              (_,  _,   _) -> error "scene internal error: to many top-level primitives"
   where prog = prim "scene" m
-        run :: DSL () -> Int -> ([(Attribute,Property)],[AFrame],Int)
+        run :: DSL () -> Int -> ([Attribute],[AFrame],Int)
         run (Pure a) i = ([],[],i)
         run (Bind (Node nm m0) m) i0 = (attrs,AFrame (Primitive nm) attrs0 frames0:frames,i2)
           where (attrs0,frames0,i1) = run m0 i0
@@ -29,7 +31,7 @@ data DSL a where
 
 data Item where
   Node :: Text -> DSL () -> Item
-  Attr :: Attribute -> Property -> Item
+  Attr :: Label -> Property -> Item
 
 instance Functor DSL where
   fmap f g = pure f <*> g
@@ -47,7 +49,7 @@ instance Monad DSL where
 prim :: Text -> DSL () -> DSL ()
 prim nm m = Bind (Node nm m) (Pure ())
 
-attr :: Attribute -> Property -> DSL ()
+attr :: Label -> Property -> DSL ()
 attr a p = Bind (Attr a p) (Pure ())
 
 example :: AFrame 
@@ -55,3 +57,14 @@ example = scene $ do
   attr "Hello" "World"
   prim "foo" $ do
     attr "This" "That"
+
+
+example2 :: AFrame 
+example2 = scene $ do
+  attr "Hello" "World"
+  prim "foo" $ do
+    return ()
+--    attr "This" "That!"
+    
+    
+
