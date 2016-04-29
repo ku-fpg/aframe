@@ -46,6 +46,13 @@ elementToAFrame ele = AFrame prim' attrs' content'
     prim'    = Primitive $ pack $ qName $ elName $ ele
     attrs'   = [ (Label $ pack $ qName $ a,Property $ pack $ p)| Attr a p <- elAttribs ele ]
     content' = [ elementToAFrame ele' | Elem ele' <- elContent ele ]
+
+
+readAFrame :: String -> Maybe AFrame
+readAFrame str = elementToAFrame <$> parseXMLDoc str
+
+showAFrame :: AFrame -> String
+showAFrame = ppcElement (useShortEmptyTags (\ _ -> False) prettyConfigPP) .  aFrameToElement
     
 ------
 -- Adding gdiff support
