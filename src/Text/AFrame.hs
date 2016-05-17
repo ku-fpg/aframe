@@ -104,12 +104,6 @@ injectAFrame aframe str = findScene str 0
     remainingScene (x:xs) = remainingScene xs
     remainingScene []     = []
 
-test = do
-  xs <- readFile "samples/helloworld.html" 
-  putStr $ xs
-  a <- readFile "samples/background.aframe" 
-  let Just af = readAFrame a
-  putStr $ injectAFrame af xs
   
 ------
 -- Adding gdiff support
