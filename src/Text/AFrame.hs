@@ -1,4 +1,4 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving, KindSignatures, GADTs, InstanceSigs, TypeOperators, MultiParamTypeClasses, FlexibleInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving, KindSignatures, GADTs, InstanceSigs, TypeOperators, MultiParamTypeClasses, FlexibleInstances, OverloadedStrings #-}
 
 module Text.AFrame where
 
@@ -6,6 +6,8 @@ import Data.Generic.Diff
 import Data.Map(Map)
 import Data.String
 import Data.Text(Text,pack,unpack)
+import Data.Maybe (listToMaybe)
+import Data.List as L
 
 import Text.XML.Light as X
 
@@ -13,18 +15,28 @@ import Text.XML.Light as X
 --   and is stored as a classical rose tree.
 
 data AFrame       = AFrame Primitive [Attribute] [AFrame]
-  deriving Show
+  deriving (Show, Eq)
 
 newtype Primitive = Primitive Text
   deriving (Show, Eq, Ord, IsString)
 
 newtype Label = Label Text
   deriving (Show, Eq, Ord, IsString)
-
+  
 newtype Property  = Property Text
   deriving (Show, Eq, Ord, IsString)
 
 type Attribute = (Label,Property)
+
+
+setAttribute :: Label -> Property -> AFrame -> AFrame
+setAttribute lbl prop (AFrame p as af) = AFrame p ((lbl,prop) : [ (l,p) | (l,p) <- as, l /= lbl ]) af
+
+getAttribute :: Label -> AFrame -> Maybe Property
+getAttribute lbl (AFrame p as af) = lookup lbl as
+
+resetAttribute :: Label -> AFrame -> AFrame
+resetAttribute lbl (AFrame p as af) = AFrame p [ (l,p) | (l,p) <- as, l /= lbl ] af
 
 
 -- | 'aFrameToElement' converts an 'AFrame' to an (XML) 'Element'. Total.
@@ -48,12 +60,57 @@ elementToAFrame ele = AFrame prim' attrs' content'
     content' = [ elementToAFrame ele' | Elem ele' <- elContent ele ]
 
 
+-- | reads an aframe document. This can be enbedded in an XML-style document (such as HTML)
 readAFrame :: String -> Maybe AFrame
-readAFrame str = elementToAFrame <$> parseXMLDoc str
+readAFrame str = do
+    element <- parseXMLDoc str
+    let aframe  = elementToAFrame element
+    findAFrame aframe
+  where 
+    findAFrame :: AFrame -> Maybe AFrame
+    findAFrame a@(AFrame (Primitive "a-scene") _ _) = return a
+    findAFrame (AFrame _ _ xs) = listToMaybe
+      [ x
+      | Just x <- map findAFrame xs
+      ]
 
 showAFrame :: AFrame -> String
 showAFrame = ppcElement (useShortEmptyTags (\ _ -> False) prettyConfigPP) .  aFrameToElement
     
+-- | inject 'AFrame' into an existing (HTML) file. Replaces complete "<a-scene>" element.
+injectAFrame :: AFrame -> String -> String
+injectAFrame aframe str = findScene str 0 
+  where
+    openTag  = "<a-scene"
+    closeTag = "</a-scene>"
+
+    findScene :: String -> Int -> String
+    findScene xs     n | openTag `L.isPrefixOf` xs = insertScene (drop (length openTag) xs) n
+    findScene (x:xs) n =
+       case x of
+         ' '  -> x : findScene xs (n+1)
+         _    -> x : findScene xs 0
+    findScene [] n = []
+
+    insertScene :: String -> Int -> String
+    insertScene xs n = unlines (s : map (spaces ++) (ss ++ [remainingScene xs]))
+     where
+       (s:ss) = lines $ showAFrame $ aframe
+       spaces = take n $ repeat ' '
+
+    -- This will mess up if the closeTag strict appears in the scene.
+    remainingScene :: String -> String
+    remainingScene xs | closeTag `L.isPrefixOf` xs = drop (length closeTag) xs
+    remainingScene (x:xs) = remainingScene xs
+    remainingScene []     = []
+
+test = do
+  xs <- readFile "samples/helloworld.html" 
+  putStr $ xs
+  a <- readFile "samples/background.aframe" 
+  let Just af = readAFrame a
+  putStr $ injectAFrame af xs
+  
 ------
 -- Adding gdiff support
 ------
