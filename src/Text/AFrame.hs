@@ -1,4 +1,4 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving, KindSignatures, GADTs, InstanceSigs, TypeOperators, MultiParamTypeClasses, FlexibleInstances, OverloadedStrings #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving, ScopedTypeVariables, KindSignatures, GADTs, InstanceSigs, TypeOperators, MultiParamTypeClasses, FlexibleInstances, OverloadedStrings #-}
 
 module Text.AFrame where
 
@@ -8,8 +8,10 @@ import Data.String
 import Data.Text(Text,pack,unpack)
 import Data.Maybe (listToMaybe)
 import Data.List as L
-
+import Data.Monoid ((<>))
 import Text.XML.Light as X
+import Data.Aeson
+import Data.Monoid
 
 -- | 'AFrame' describes the contents of an a-frame scene,
 --   and is stored as a classical rose tree.
@@ -18,16 +20,45 @@ data AFrame       = AFrame Primitive [Attribute] [AFrame]
   deriving (Show, Eq)
 
 newtype Primitive = Primitive Text
-  deriving (Show, Eq, Ord, IsString)
+  deriving (Show, Eq, Ord, IsString, ToJSON, FromJSON)
 
 newtype Label = Label Text
-  deriving (Show, Eq, Ord, IsString)
+  deriving (Show, Eq, Ord, IsString, ToJSON, FromJSON)
   
 newtype Property  = Property Text
-  deriving (Show, Eq, Ord, IsString)
+  deriving (Show, Eq, Ord, IsString, ToJSON, FromJSON)
 
 type Attribute = (Label,Property)
 
+-- | A valid css or jquerty-style path, in Haskell from.
+--   An example of the string form might be
+--     $('a-scene > a-entity:nth-of-type(2) > a-collada-model:nth-of-type(1) > a-animation:nth-of-type(1)')
+data Path = Path Primitive [(Int,Primitive)]
+  deriving (Show, Eq, Ord)
+
+-------------------------------------------------------------------------------------------------
+instance ToJSON Path where
+    toJSON (Path p ps) = toJSON $
+               toJSON p : concat
+            [ [toJSON i,toJSON p]
+            | (i,p) <- ps
+            ]
+
+instance FromJSON Path where
+    parseJSON as = do
+        xs :: [Value] <- parseJSON as
+        toPath xs
+      where toPath [p] = do
+                  txt <- parseJSON p
+                  return $ Path txt []
+            toPath (p1:i1:rest) = do
+                  txt :: Primitive <- parseJSON p1
+                  n   :: Int       <- parseJSON i1
+                  Path p ps <- toPath rest
+                  return $ Path txt ((n,p):ps)
+            toPath _ = fail "bad Path"
+
+-------------------------------------------------------------------------------------------------
 
 setAttribute :: Label -> Property -> AFrame -> AFrame
 setAttribute lbl prop (AFrame p as af) = AFrame p ((lbl,prop) : [ (l,p) | (l,p) <- as, l /= lbl ]) af
@@ -180,5 +211,40 @@ instance Type AFrameFamily [AFrame] where
 instance Type AFrameFamily Attribute where
     constructors = [Abstr Attribute']
 
+data AFrameUpdate = AFrameUpdate 
+    { aframePath     :: Path
+    , aframeLabel    :: Label
+    , aframeProperty :: Property
+    }
 
+{-
+    compareAFrame :: AFrame -> AFrame -> Maybe [([Text],Attribute)]
+compareAFrame aframe1 aframe2 = fmap (fmap (\ (xs,a) -> (intercalate " > " xs,a))) 
+    $ deltaAFrame aframe1 aframe2
+-}
+deltaAFrame :: AFrame -> AFrame -> Maybe [(Path,Attribute)]
+deltaAFrame (AFrame p1@(Primitive primName) attrs1 aframes1)
+             (AFrame p2 attrs2 aframes2)
+      | p1 /= p2 = fail "element name does not match in deltasAFrame"
+      | length aframes1 /= length aframes2
+                 = fail "sub elements count do not match in deltasAFrame"          
+      | otherwise = do
+              attrsD <- fmap (\ a -> (Path p1 [],a)) <$> deltaAttributes attrs1 attrs2
+              let ps = [ p | AFrame p _ _ <- aframes1 ]
+                  xs = [ length [ () | x' <- xs, x' == x ] | (x:xs) <- tail $ scanl (flip (:)) [] ps ]
+              aframesD <- concat <$> sequence
+                    [ do ds <- deltaAFrame a1 a2
+                         return $ fmap (\ (Path p ps,at) -> (Path p1 ((x,p):ps),at)) ds
+                    | (a1,a2,x) <- zip3 aframes1 aframes2 xs
+                    ]
+              return $ attrsD ++ aframesD
+
+deltaAttributes :: [Attribute] -> [Attribute] -> Maybe [Attribute]
+deltaAttributes xs ys | length xs /= length ys = fail "different number of arguments for deltaAttributes"
+deltaAttributes xs ys = concat <$> sequence [ deltaAttribute x y | (x,y) <- xs `zip` ys ]
   
+deltaAttribute :: Attribute -> Attribute -> Maybe [Attribute]
+deltaAttribute attr1@(lbl1,_) attr2@(lbl2,_)
+  | attr1 == attr2 = return []       -- same result
+  | lbl1 == lbl2   = return [attr2]  -- true update
+  | otherwise      = fail "labels do not match in deltaAttributes"
