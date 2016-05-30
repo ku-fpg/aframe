@@ -140,7 +140,7 @@ readAFrame str = do
       ]
 
 showAFrame :: AFrame -> String
-showAFrame = LT.unpack . T.render . aFrameToElement
+showAFrame = LT.unpack . T.renderWith False . aFrameToElement
     
 -- | inject 'AFrame' into an existing (HTML) file. Replaces complete "<a-scene>" element.
 injectAFrame :: AFrame -> String -> String
