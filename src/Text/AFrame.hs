@@ -304,3 +304,31 @@ preOrderFrame f af = do
   aframes' <- traverse (preOrderFrame f) aframes
   return $ AFrame prim attrs aframes'
 
+-- This finds \<script src=\"...\"> and inserts the text=\"..\" into the \<script>.
+resolveScript :: Monad m => (Text -> m LT.Text) -> AFrame -> m AFrame
+resolveScript rf  = preOrderFrame fn
+  where 
+    fn af@(AFrame "script" attrs aframes) = case lookup "src" attrs of
+      Nothing -> return af
+      Just (Property path) ->
+            do txt <- rf path
+               return $ AFrame "script" 
+                         ((Label "text",Property (LT.toStrict txt))
+                             : [(l,p) | (l,p) <- attrs, l `notElem` ["src","text"]]
+                         )
+                         aframes
+    fn af = return af
+instantiateTemplates :: Monad m => ([Attribute] -> AFrame -> m AFrame) -> AFrame -> m AFrame
+instantiateTemplates f root = preOrderFrame fn root
+  where
+    fn (aEntity@(AFrame "a-entity" attrs aframes)) = case lookup "template" attrs of
+          Nothing -> return aEntity
+          Just templ -> case lookup "src" (unpackProperty templ) of
+            Nothing -> return aEntity
+            Just (Property src) | T.take 1 src == "#" -> 
+              case getElementById root (T.drop 1 src) of
+                Just (script@(AFrame "script" attrs _)) -> do
+                    txt <- f attrs script
+                    return aEntity
+                _ -> return aEntity  -- id not found
+    fn af = return af
