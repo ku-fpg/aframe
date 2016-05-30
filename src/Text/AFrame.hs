@@ -2,10 +2,13 @@
 
 module Text.AFrame where
 
+import Control.Applicative
+import Data.Char (isSpace)
 import Data.Generic.Diff
 import Data.Map(Map)
 import Data.String
 import Data.Text(Text,pack,unpack)
+import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
 import Data.Maybe (listToMaybe)
 import Data.List as L
@@ -278,3 +281,18 @@ deltaAttribute attr1@(lbl1,_) attr2@(lbl2,_)
   | attr1 == attr2 = return []       -- same result
   | lbl1 == lbl2   = return [attr2]  -- true update
   | otherwise      = fail "labels do not match in deltaAttributes"
+
+------------------------------------------------------------------------------------------
+
+unpackProperty :: Property -> [(Label,Property)]
+unpackProperty (Property prop) = 
+      [ (Label (T.dropWhile isSpace l), Property (T.dropWhile (\ c -> isSpace c || c == ':') p))
+      | (l,p) <- map (T.span (/= ':')) (T.splitOn ";" prop) 
+      , not (T.null p)
+      ]
+
+packProperty :: [(Label,Property)] -> Property
+packProperty = Property 
+             . T.intercalate "; " 
+             . map (\ (Label lbl,Property txt) -> lbl <> ": " <> txt)
+
