@@ -6,15 +6,24 @@ import Data.Generic.Diff
 import Data.Map(Map)
 import Data.String
 import Data.Text(Text,pack,unpack)
+import qualified Data.Text.Lazy as LT
 import Data.Maybe (listToMaybe)
 import Data.List as L
 import Data.Monoid ((<>))
-import Text.XML.Light as X
+--import Text.XML.Light as X
 import Data.Aeson
 import Data.Monoid
+import qualified Text.Taggy as T
+import qualified Data.HashMap.Strict as H
+
 
 -- | 'AFrame' describes the contents of an a-frame scene,
 --   and is stored as a classical rose tree.
+--   'AFrame' follows the DOM, except there are no textual  
+--   content; it is tags all the way down. 
+--
+--   An xception is that \<script>ABC\</script> is encoded using 
+--  \<script text=\"ABC\">\</script>
 
 data AFrame       = AFrame Primitive [Attribute] [AFrame]
   deriving (Show, Eq)
@@ -69,34 +78,51 @@ getAttribute lbl (AFrame p as af) = lookup lbl as
 resetAttribute :: Label -> AFrame -> AFrame
 resetAttribute lbl (AFrame p as af) = AFrame p [ (l,p) | (l,p) <- as, l /= lbl ] af
 
+-------------------------------------------------------------------------------------------------
+
+--setPath :: Path -> Label -> Property -> AFrame -> AFrame
+
+--getPath :: Path -> Label -> AFrame -> Mabe Property
+
+
+-------------------------------------------------------------------------------------------------
 
 -- | 'aFrameToElement' converts an 'AFrame' to an (XML) 'Element'. Total.
-aFrameToElement :: AFrame -> Element
-aFrameToElement (AFrame prim attrs rest) = node (unqual $ unpack prim') (attrs',rest')
+aFrameToElement :: AFrame -> T.Element
+aFrameToElement (AFrame prim attrs rest) = T.Element prim' attrs' rest'
   where
     Primitive prim' = prim
-    attrs'          = [ Attr (unqual $ unpack a) (unpack p) 
+    attrs'          = H.fromList
+                    $ [ (a,p)
                       | (Label a,Property p) <- attrs 
+                      , not (prim' == "script" && a == "text")
                       ]
-    rest'           = map aFrameToElement rest
+    rest'           = [ T.NodeContent p
+                      | (Label "text",Property p) <- attrs 
+                      , prim' == "script" 
+                      ]
+                   ++ map (T.NodeElement . aFrameToElement) rest
 
 
--- | 'aFrameToElement' converts a (XML) 'Element' to an 'AFrame'. Total.
+-- | 'aFrameToElement' converts an (HTML) 'Element' to an 'AFrame'. Total.
 -- Strips out any text (which is not used by 'AFrame' anyway.)
-elementToAFrame :: Element -> AFrame
+elementToAFrame :: T.Element -> AFrame
 elementToAFrame ele = AFrame prim' attrs' content'
   where
-    prim'    = Primitive $ pack $ qName $ elName $ ele
-    attrs'   = [ (Label $ pack $ qName $ a,Property $ pack $ p)| Attr a p <- elAttribs ele ]
-    content' = [ elementToAFrame ele' | Elem ele' <- elContent ele ]
-
+    prim'    = Primitive $ T.eltName $ ele
+    attrs'   = [ (Label a,Property p)| (a,p) <- H.toList $ T.eltAttrs ele ]
+            ++ [ (Label "text",Property txt)| T.NodeContent txt <- T.eltChildren ele ]
+    content' = [ elementToAFrame ele' | T.NodeElement ele' <- T.eltChildren ele ]
 
 -- | reads an aframe document. This can be enbedded in an XML-style document (such as HTML)
 readAFrame :: String -> Maybe AFrame
 readAFrame str = do
-    element <- parseXMLDoc str
-    let aframe  = elementToAFrame element
-    findAFrame aframe
+    let doms = T.parseDOM True (LT.fromStrict $ pack str)
+    case doms of
+      [T.NodeElement dom] -> do
+        let aframe  = elementToAFrame dom
+        findAFrame aframe
+      _ -> error $ show ("found strange DOM",doms)
   where 
     findAFrame :: AFrame -> Maybe AFrame
     findAFrame a@(AFrame (Primitive "a-scene") _ _) = return a
@@ -106,7 +132,7 @@ readAFrame str = do
       ]
 
 showAFrame :: AFrame -> String
-showAFrame = ppcElement (useShortEmptyTags (\ _ -> False) prettyConfigPP) .  aFrameToElement
+showAFrame = LT.unpack . T.render . aFrameToElement
     
 -- | inject 'AFrame' into an existing (HTML) file. Replaces complete "<a-scene>" element.
 injectAFrame :: AFrame -> String -> String
@@ -133,8 +159,7 @@ injectAFrame aframe str = findScene str 0
     remainingScene :: String -> String
     remainingScene xs | closeTag `L.isPrefixOf` xs = drop (length closeTag) xs
     remainingScene (x:xs) = remainingScene xs
-    remainingScene []     = []
-
+    remainingScene []     = []  
   
 ------
 -- Adding gdiff support
