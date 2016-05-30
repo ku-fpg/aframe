@@ -84,6 +84,11 @@ resetAttribute lbl (AFrame p as af) = AFrame p [ (l,p) | (l,p) <- as, l /= lbl ]
 
 --getPath :: Path -> Label -> AFrame -> Mabe Property
 
+getElementById :: AFrame -> Text -> Maybe AFrame
+getElementById af@(AFrame p as is) i = 
+    case lookup "id" as of
+      Just (Property i') | i == i' -> return af
+      _ -> listToMaybe [ af' | Just af' <- map (flip getElementById i) is ]
 
 -------------------------------------------------------------------------------------------------
 
