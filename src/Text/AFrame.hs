@@ -296,3 +296,11 @@ packProperty = Property
              . T.intercalate "; " 
              . map (\ (Label lbl,Property txt) -> lbl <> ": " <> txt)
 
+------------------------------------------------------------------------------------------
+
+preOrderFrame :: Monad m => (AFrame -> m AFrame) -> AFrame -> m AFrame
+preOrderFrame f af = do
+  AFrame prim attrs aframes <- f af
+  aframes' <- traverse (preOrderFrame f) aframes
+  return $ AFrame prim attrs aframes'
+
